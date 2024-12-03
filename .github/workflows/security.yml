@@ -1,0 +1,65 @@
+name: Security Scan New
+permissions:
+  contents: write
+  security-events: write
+
+on:
+  push:
+
+jobs:
+  run_sast:
+    if: (github.actor != 'dependabot[bot]')
+    name: SAST Scan
+    runs-on: ubuntu-latest
+
+    container:
+      image: returntocorp/semgrep
+
+    steps:
+      - name: 🏗 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🩺 Run SAST - Semgrep 
+        run: semgrep ci --json -o sast-report.json || true
+        env: 
+          SEMGREP_RULES: ${{ github.event_name == 'pull_request' && 'p/cwe-top-25 p/owasp-top-ten p/r2c-security-audit p/javascript p/trailofbits' || 'p/default' }} 
+ 
+      - name: 🏗 Save Semgrep Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-report
+          path: sast-report.json
+
+  rua_sca:
+    name: SCA Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🏗 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🩺 Run SCA - Trivy
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'json'
+          output: 'sca-report.json'
+          severity: 'CRITICAL,HIGH'
+          skip-setup-trivy: true
+
+      - name: 🏗 Save Trivy Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-report
+          path: 'sca-report.json'
+
+  run_secrets_scan:
+      runs-on: ubuntu-latest
+      steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Gitleaks
+        uses: zricethezav/gitleaks-action@v2.2.0
+        with:
+          args: --path=. --verbose --redact
